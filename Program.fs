@@ -7,32 +7,64 @@ type ParseResult<'token, 'a>
 
 type Parser<'token, 'a> =
     'token list -> ParseResult<'token, 'a>
-            
-let pMap f parser input =
-    match parser input with
-    | Fail e -> Fail e
-    | Success (p, input) -> Success (f p, input)
 
-let pBind parser f input =
-    match parser input with
-    | Fail e -> Fail e
-    | Success (parsed, rest) ->
-        f parsed rest
+let pBind f p =
+    fun input ->
+        match p input with
+        | Fail e -> Fail e
+        | Success (parsed, rest) ->
+            f parsed rest
 
-let pReturn x input =
-    Success (x, input)
+let pReturn x =
+    fun input -> Success (x, input)
+        
+let pBindFail f p =
+    fun input ->
+        match p input with
+        | Success (parsed, input) -> Success (parsed, input)
+        | Fail e ->
+            f e input
 
-let withError errorMsgs parser input =
-    match parser input with
-    | Success (parsed, rest) -> Success (parsed, rest)
-    | Fail msgs -> Fail <| msgs @ errorMsgs
+let pReturnFail e =
+    fun _input -> Fail e
 
 type ParserBuilder() =
     member this.Bind(p: Parser<'token, 'a>, f: 'a -> Parser<'token, 'b>) =
-        pBind p f
+        pBind f p
     member this.Return(x): Parser<'token, 'a> =
         pReturn x
 let parser = ParserBuilder()
+
+let pMap f p =
+    parser {
+        let! parsed = p
+        return f parsed
+    }
+
+type LexerBuilder() =
+    member this.Yield(p) =
+        p |> pMap (fun x -> [x])
+    member this.YieldFrom(p) =
+        p 
+    member this.Combine(p1, p2) =
+        parser {
+            let! x = p1
+            let! y = p2
+            return x @ y
+        }
+    member this.Zero() =
+        pReturn []
+    member this.Delay(f) =
+        f()
+let lexer = LexerBuilder()
+
+let withError errorMsgs parser =
+    parser|> (pBindFail
+        (fun msgs -> pReturnFail <| msgs @ errorMsgs))
+
+let replaceError errorMsgs parser =
+    parser |> (pBindFail
+        (fun _msgs -> pReturnFail <| errorMsgs))
 
 let recognize (p: 'token -> bool): Parser<'token, 'token> =
     function
@@ -41,23 +73,23 @@ let recognize (p: 'token -> bool): Parser<'token, 'token> =
         if p input then
             Success (input, rest)
         else
-            Fail [$"Found {input} in {input :: rest}"]
+            Fail [$"Couldn't find token in {input :: rest}"]
 
 let accept token: Parser<'token, 'token> =
     recognize ((=) token)
     |> withError [$"Expected {token}"]
 
 let drop token: Parser<'token, unit> =
-    accept token |> pMap (fun _ -> ())
+    parser {
+        let! _ = accept token
+        return ()
+    }
 
-let orElse (p1: Parser<'token, 'a>) (p2: Parser<'token, 'a>) input =
-    match p1 input with
-    | Success (a,b) -> Success (a,b)
-    | Fail e1 ->
-        match p2 input with
-        | Success (a,b) -> Success (a,b)
-        | Fail e2 ->
-            Fail <| e1 @ e2
+let orElse (p1: Parser<'token, 'a>) (p2: Parser<'token, 'a>) =
+    p1 |> (pBindFail
+        (fun e1 ->
+            p2 |> (pBindFail
+                (fun e2 -> pReturnFail <| e1 @ e2))))
 
 let andThen (p1: Parser<'token, 'a list>) (p2: Parser<'token, 'a>) =
     parser {
@@ -68,34 +100,30 @@ let andThen (p1: Parser<'token, 'a list>) (p2: Parser<'token, 'a>) =
 
 let choose (parsers: Parser<'token, 'a> list): Parser<'token, 'a> =
     parsers
-    |> List.fold orElse (fun _ -> Fail [])
+    |> List.fold orElse (pReturnFail [])
 
 let chain (parsers: Parser<'token, 'a> list): Parser<'token, 'a list> =
     parsers
     |> List.fold andThen (pReturn [])
 
-let rec many parser input =
-    match parser input with
-    | Fail _ -> Success ([], input)
-    | Success (parsed, rest) ->
-        let next = many parser rest
-        match next with
-        // This branch can`t happen
-        | Fail _ -> Success ([parsed], rest)
-        | Success (restParsed, rest') ->
-            Success (parsed :: restParsed, rest')
-            
-let repeat (p: Parser<'token, 'a>): Parser<'token, 'a list> =
+let rec many p =
+    p |> repeat
+    |> pBindFail (fun _msgs -> pReturn [])
+
+and repeat (p: Parser<'token, 'a>): Parser<'token, 'a list> =
     parser {
         let! parsed = p
         let! restParsed = p |> many
         return parsed :: restParsed
     }
 
-let option parser input =
-    match parser input with
-    | Fail _ -> Success ([], input)
-    | Success (parsed, rest) -> Success ([parsed], rest)
+let option (p: Parser<'token, 'a>): Parser<'token, 'a list> =
+    parser {
+        let! parsed = p
+        return [parsed]
+    }
+    |> pBindFail (fun _msgs -> pReturn [])
+
 
 let parses (s: string): Parser<char,string> =
     chain (s |> Seq.toList |> List.map accept)
@@ -123,15 +151,22 @@ let main argv =
     printfn "%A"
         <| option (choose [accept 'B'; accept 'C']) input
 
-    let res =
-        input
-        |> parser {
-            let! x = accept 'A'
-            let! y = accept 'C' |> option
-            let! z = choose [accept 'B'; accept 'C'] |> repeat
-            return x :: y @ z
-        }
-
-    printfn "%A" res
-        
+    input
+    |> parser {
+        let! x = accept 'A'
+        let! y = accept 'C' |> option
+        let! z = choose [accept 'B'; accept 'C'] |> repeat
+        return x :: y @ z
+    }
+    |> printfn "%A"
+    
+    input
+    |> lexer {
+        yield accept 'A'
+        yield! accept 'C' |> option
+        yield! choose [accept 'B'; accept 'C'] |> repeat
+        yield accept 'A'
+    }
+    |> printfn "%A"
+    
     0 
