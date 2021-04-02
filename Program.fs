@@ -33,6 +33,8 @@ type ParserBuilder() =
         pBind f p
     member this.Return(x): Parser<'token, 'a> =
         pReturn x
+    member this.ReturnFrom(x): Parser<'token, 'a> =
+        x
 let parser = ParserBuilder()
 
 let pMap f p =
@@ -51,6 +53,16 @@ type LexerBuilder() =
             let! x = p1
             let! y = p2
             return x @ y
+        }
+    member this.For(p, f) =
+        parser {
+            let! parsed = p
+            match parsed with
+            | [] -> return []
+            | tokens ->
+                let beginning = tokens |> List.collect f
+                let! rest = this.For(p, f)
+                return  beginning @ rest
         }
     member this.Zero() =
         pReturn []
@@ -79,9 +91,9 @@ let accept token: Parser<'token, 'token> =
     recognize ((=) token)
     |> withError [$"Expected {token}"]
 
-let drop token: Parser<'token, unit> =
+let drop p: Parser<'token, unit> =
     parser {
-        let! _ = accept token
+        let! _ = p
         return ()
     }
 
@@ -130,43 +142,106 @@ let parses (s: string): Parser<char,string> =
     |> pMap (fun s -> String.Join("", s))
 
 
+let stringToInt (i: string) =
+    parser {
+        match Int64.TryParse(i) with
+        | false, _ -> return! pReturnFail [$"Couldn't parse string '{i}' as an integer"]
+        | true, i -> return i
+    }
+    
+type Operator =
+    | Mul
+    | Add
+    | Sub
+    
+type Precedence = int
+type Association =
+    | Left
+    | Right
+    
+type Token =
+    | BinaryOp of Operator * Precedence * Association
+    
+type Expression =
+    | Operator of Operator * Expression * Expression
+    | Int of int64
+
 [<EntryPoint>]
 let main argv =
-    let input =
-        "ABCCBADBA"
-        |> Seq.toList
+    let input = "1 + 2 * 3 * 5 + 6 - 4 - 8 + 9"
+    
+    let whitespace =
+        accept ' '
         
-    printfn "%A"
-        <| choose [parses "BC"; parses "ABC"] input
+    let parseInt =
+        parser {
+           let! digits =  
+                ['0'..'9']
+                |> List.map accept
+                |> choose
+                |> repeat
+                
+           let! int =
+               digits
+               |> fun s -> String.Join("", s)
+               |> stringToInt
+               
+           return Int int
+        }
         
-    printfn "%A"
-        <| chain [accept 'A'; accept 'B'] input
-        
-    printfn "%A"
-        <| repeat (choose [accept 'A'; accept 'B'; accept 'C']) input
-        
-    printfn "%A"
-        <| many (choose [accept 'A'; accept 'C']) input
-        
-    printfn "%A"
-        <| option (choose [accept 'B'; accept 'C']) input
+    let parseOperator =
+        parser {
+            let! op =
+                ['+'; '*'; '-']
+                |> List.map accept
+                |> choose
+
+            match op with
+            | '*' -> return BinaryOp (Mul, 2, Left)
+            | '+' -> return BinaryOp (Add, 1, Left)
+            | _ -> return BinaryOp (Sub, 1, Left)
+        }
+
+    let parseExpression =
+        let rec pe precedenceLevel lhs =
+            parser {
+                do! whitespace |> many |> drop
+                
+                let! BinaryOp (op, opPrecedenceLevel, associativity) = parseOperator
+                
+                let lessThan =
+                    if associativity = Left then
+                        (<=)
+                    else
+                        (<)
+                if (opPrecedenceLevel |> lessThan) precedenceLevel then
+                    return! pReturnFail ["Operator precedence is not high enough to continue recursing"]
+                else
+                    do! whitespace |> many |> drop
+                    
+                    let! rest = pi opPrecedenceLevel
+                    
+                    let res = Operator (op, lhs, rest)
+                    return! choose [
+                      pe precedenceLevel res
+                      parser {
+                          return res
+                      }
+                    ]
+            }
+        and pi l =
+            choose [
+                parser {
+                    let! int = parseInt
+                    return! pe l int
+                }
+                parseInt
+            ]
+        pi -1
 
     input
-    |> parser {
-        let! x = accept 'A'
-        let! y = accept 'C' |> option
-        let! z = choose [accept 'B'; accept 'C'] |> repeat
-        return x :: y @ z
-    }
-    |> printfn "%A"
-    
-    input
-    |> lexer {
-        yield accept 'A'
-        yield! accept 'C' |> option
-        yield! choose [accept 'B'; accept 'C'] |> repeat
-        yield accept 'A'
-    }
-    |> printfn "%A"
+    |> Seq.toList
+    |> parseExpression
+    |> printfn "%A" 
     
     0 
