@@ -43,35 +43,8 @@ let pMap f p =
         return f parsed
     }
 
-type LexerBuilder() =
-    member this.Yield(p) =
-        p |> pMap (fun x -> [x])
-    member this.YieldFrom(p) =
-        p 
-    member this.Combine(p1, p2) =
-        parser {
-            let! x = p1
-            let! y = p2
-            return x @ y
-        }
-    member this.For(p, f) =
-        parser {
-            let! parsed = p
-            match parsed with
-            | [] -> return []
-            | tokens ->
-                let beginning = tokens |> List.collect f
-                let! rest = this.For(p, f)
-                return  beginning @ rest
-        }
-    member this.Zero() =
-        pReturn []
-    member this.Delay(f) =
-        f()
-let lexer = LexerBuilder()
-
 let withError errorMsgs parser =
-    parser|> (pBindFail
+    parser |> (pBindFail
         (fun msgs -> pReturnFail <| msgs @ errorMsgs))
 
 let replaceError errorMsgs parser =
@@ -144,12 +117,16 @@ let parses (s: string): Parser<char,string> =
 
 let stringToInt (i: string) =
     parser {
-        match Int64.TryParse(i) with
+        match Int32.TryParse(i) with
         | false, _ -> return! pReturnFail [$"Couldn't parse string '{i}' as an integer"]
         | true, i -> return i
     }
     
-type Operator =
+    
+type PrefixOperator =
+    | Neg
+    
+type BinaryOperator =
     | Mul
     | Add
     | Sub
@@ -159,18 +136,19 @@ type Association =
     | Left
     | Right
     
-type Token =
-    | BinaryOp of Operator * Precedence * Association
+type PrefixOp = PrefixOperator
+type BinaryOp = BinaryOperator * Precedence * Association
     
 type Expression =
-    | Operator of Operator * Expression * Expression
-    | Int of int64
+    | Op of PrefixOperator * Expression
+    | Binary of BinaryOperator * Expression * Expression
+    | Int of int
 
 [<EntryPoint>]
 let main argv =
-    let input = "1 + 2 * 3 * 5 + 6 - 4 - 8 + 9"
+    let input = "-1 + --2 * -3 * 5 + 6 - -4 - 8 + 9"
     
-    let whitespace =
+    let parseWhitespace =
         accept ' '
         
     let parseInt =
@@ -189,25 +167,25 @@ let main argv =
            return Int int
         }
         
-    let parseOperator =
-        parser {
-            let! op =
-                ['+'; '*'; '-']
-                |> List.map accept
-                |> choose
+    let parseBinaryOperator =
+        choose [
+            accept '*' |> pMap (fun _ -> BinaryOp (Mul, 2, Left))
+            accept '+' |> pMap (fun _ -> BinaryOp (Add, 1, Left))
+            accept '-' |> pMap (fun _ -> BinaryOp (Sub, 1, Left))
+        ]
 
-            match op with
-            | '*' -> return BinaryOp (Mul, 2, Left)
-            | '+' -> return BinaryOp (Add, 1, Left)
-            | _ -> return BinaryOp (Sub, 1, Left)
+    let parsePrefixOperator =
+        parser {
+            do! accept '-' |> drop
+            return Neg
         }
 
     let parseExpression =
         let rec pe precedenceLevel lhs =
             parser {
-                do! whitespace |> many |> drop
+                do! parseWhitespace |> many |> drop
                 
-                let! BinaryOp (op, opPrecedenceLevel, associativity) = parseOperator
+                let! (op, opPrecedenceLevel, associativity) = parseBinaryOperator
                 
                 let lessThan =
                     if associativity = Left then
@@ -217,11 +195,11 @@ let main argv =
                 if (opPrecedenceLevel |> lessThan) precedenceLevel then
                     return! pReturnFail ["Operator precedence is not high enough to continue recursing"]
                 else
-                    do! whitespace |> many |> drop
+                    do! parseWhitespace |> many |> drop
                     
                     let! rest = pi opPrecedenceLevel
                     
-                    let res = Operator (op, lhs, rest)
+                    let res = Binary (op, lhs, rest)
                     return! choose [
                       pe precedenceLevel res
                       parser {
@@ -230,12 +208,22 @@ let main argv =
                     ]
             }
         and pi l =
+            let rec parseAtom () =
+                choose [
+                    parseInt
+                    parser {
+                        let! op = parsePrefixOperator
+                        let! rest = parseAtom ()
+                        return Op (op, rest)
+                    }
+                ]
             choose [
                 parser {
-                    let! int = parseInt
-                    return! pe l int
+                    do! parseWhitespace |> many |> drop
+                    let! a = parseAtom ()
+                    return! pe l a
                 }
-                parseInt
+                parseAtom ()
             ]
         pi -1
 
