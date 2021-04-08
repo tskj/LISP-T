@@ -131,22 +131,25 @@ type BinaryOperator =
     | Add
     | Sub
     
+type PostfixOperator =
+    | Fact
+    
 type Precedence = int
 type Association =
     | Left
     | Right
-    
-type PrefixOp = PrefixOperator
+
 type BinaryOp = BinaryOperator * Precedence * Association
     
 type Expression =
     | Op of PrefixOperator * Expression
+    | Op' of PostfixOperator * Expression
     | Binary of BinaryOperator * Expression * Expression
     | Int of int
 
 [<EntryPoint>]
 let main argv =
-    let input = "-1 + --2 * -3 * 5 + 6 - -4 - 8 + 9"
+    let input = "-1 + --2 * -3 * (5 + 6) - -(4 - 8) + 9 * ((12 + 13) * (140 + 150))"
     
     let parseWhitespace =
         accept ' '
@@ -180,7 +183,13 @@ let main argv =
             return Neg
         }
 
-    let parseExpression =
+    let parsePostfixOperator =
+        parser {
+            do! accept '!' |> drop
+            return Fact
+        }
+
+    let parseExpression: Parser<char, Expression> =
         let rec pe precedenceLevel lhs =
             parser {
                 do! parseWhitespace |> many |> drop
@@ -215,6 +224,12 @@ let main argv =
                         let! op = parsePrefixOperator
                         let! rest = parseAtom ()
                         return Op (op, rest)
+                    }
+                    parser {
+                        do! accept '(' |> drop
+                        let! atom = pi -1
+                        do! accept ')' |> drop
+                        return atom
                     }
                 ]
             choose [
