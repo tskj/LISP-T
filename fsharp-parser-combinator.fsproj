@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net6.0</TargetFramework>
+        <RootNamespace>fsharp-parser-combinator</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Compile Include="combinators.fs"/>
+        <Compile Include="utils.fs"/>
+        <Compile Include="pratt-parser.fs"/>
+        <Compile Include="program.fs"/>
+    </ItemGroup>
+
+</Project>
