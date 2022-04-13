@@ -3,6 +3,8 @@
 [<EntryPoint>]
 let main argv =
 
-    Pratt.parse ()
+  Pratt.run ()
+
+  Nok.run ()
     
-    0 
+  0 

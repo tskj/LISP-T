@@ -3,7 +3,7 @@ module Utils
 open System
 open Combinators
 
-let stringToInt (i: string) =
+let string_to_int (i: string) =
     parser {
         match Int32.TryParse(i) with
         | false, _ -> return! pReturnFail [$"Couldn't parse string '{i}' as an integer"]

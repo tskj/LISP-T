@@ -29,7 +29,7 @@ type Expression =
     | Binary of BinaryOperator * Expression * Expression
     | Int of int
 
-let parse () =
+let run () =
     let input = "-1 + --2 * -3 * (5 + 6) - -(4 - 8) + 9 * ((12 + 13) * (140 + 150))"
     
     let parseWhitespace =
@@ -41,12 +41,12 @@ let parse () =
                 ['0'..'9']
                 |> List.map accept
                 |> choose
-                |> repeat
+                |> at_least_one
                 
            let! int =
                digits
                |> fun s -> String.Join("", s)
-               |> stringToInt
+               |> string_to_int
                
            return Int int
         }
@@ -73,7 +73,7 @@ let parse () =
     let parseExpression: Parser<char, Expression> =
         let rec pe precedenceLevel lhs =
             parser {
-                do! parseWhitespace |> many |> drop
+                do! parseWhitespace |> any |> drop
                 
                 let! (op, opPrecedenceLevel, associativity) = parseBinaryOperator
                 
@@ -85,7 +85,7 @@ let parse () =
                 if (opPrecedenceLevel |> lessThan) precedenceLevel then
                     return! pReturnFail ["Operator precedence is not high enough to continue recursing"]
                 else
-                    do! parseWhitespace |> many |> drop
+                    do! parseWhitespace |> any |> drop
                     
                     let! rest = pi opPrecedenceLevel
                     
@@ -115,7 +115,7 @@ let parse () =
                 ]
             choose [
                 parser {
-                    do! parseWhitespace |> many |> drop
+                    do! parseWhitespace |> any |> drop
                     let! a = parseAtom ()
                     return! pe l a
                 }
@@ -124,6 +124,5 @@ let parse () =
         pi -1
 
     input
-    |> Seq.toList
     |> parseExpression
     |> printfn "%A" 

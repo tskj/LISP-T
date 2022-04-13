@@ -3,114 +3,124 @@ module Combinators
 open System
 
 type ParseResult<'token, 'a>
-    = Success of 'a * ('token list)
-    | Fail of string list
+  = Success of 'a * ('token seq)
+  | Fail of string list
 
 type Parser<'token, 'a> =
-    'token list -> ParseResult<'token, 'a>
+  'token seq -> ParseResult<'token, 'a>
 
 let pBind f p =
-    fun input ->
-        match p input with
-        | Fail e -> Fail e
-        | Success (parsed, rest) ->
-            f parsed rest
+  fun input ->
+    match p input with
+    | Fail e -> Fail e
+    | Success (parsed, rest) ->
+      f parsed rest
 
 let pReturn x =
-    fun input -> Success (x, input)
+  fun input -> Success (x, input)
         
 let pBindFail f p =
-    fun input ->
-        match p input with
-        | Success (parsed, input) -> Success (parsed, input)
-        | Fail e ->
-            f e input
+  fun input ->
+    match p input with
+    | Success (parsed, input) -> Success (parsed, input)
+    | Fail e ->
+      f e input
 
 let pReturnFail e =
-    fun _input -> Fail e
+  fun _input -> Fail e
 
 type ParserBuilder() =
-    member this.Bind(p: Parser<'token, 'a>, f: 'a -> Parser<'token, 'b>) =
-        pBind f p
-    member this.Return(x): Parser<'token, 'a> =
-        pReturn x
-    member this.ReturnFrom(x): Parser<'token, 'a> =
-        x
+  member this.Bind(p: Parser<'token, 'a>, f: 'a -> Parser<'token, 'b>) =
+    pBind f p
+  member this.Return(x): Parser<'token, 'a> =
+    pReturn x
+  member this.ReturnFrom(x): Parser<'token, 'a> =
+    x
 let parser = ParserBuilder()
 
 let pMap f p =
-    parser {
-        let! parsed = p
-        return f parsed
-    }
+  parser {
+    let! parsed = p
+    return f parsed
+  }
 
 let withError errorMsgs parser =
-    parser |> (pBindFail
-        (fun msgs -> pReturnFail <| msgs @ errorMsgs))
+  parser |> (pBindFail
+    (fun msgs -> pReturnFail <| msgs @ errorMsgs))
 
 let replaceError errorMsgs parser =
-    parser |> (pBindFail
-        (fun _msgs -> pReturnFail <| errorMsgs))
+  parser |> (pBindFail
+    (fun _msgs -> pReturnFail <| errorMsgs))
 
 let recognize (p: 'token -> bool): Parser<'token, 'token> =
-    function
-    | [] -> Fail [$"Expected token, but reached end of input"]
-    | input :: rest ->
-        if p input then
-            Success (input, rest)
-        else
-            Fail [$"Couldn't find token in {input :: rest}"]
+  fun s ->
+    if Seq.isEmpty s then
+      Fail [$"Expected token, but reached end of input"]
+    else
+      let input = Seq.head s
+      let rest = Seq.tail s
+      if p input then
+        Success (input, rest)
+      else
+        let error =
+          s |> Seq.map (fun x -> x.ToString())
+          |> Seq.toList
+        Fail [$"Couldn't find token in {error}"]
 
 let accept token: Parser<'token, 'token> =
-    recognize ((=) token)
-    |> withError [$"Expected {token}"]
+  recognize ((=) token)
+  |> withError [$"Expected {token}"]
 
 let drop p: Parser<'token, unit> =
-    parser {
-        let! _ = p
-        return ()
-    }
+  parser {
+    let! _ = p
+    return ()
+  }
 
 let orElse (p1: Parser<'token, 'a>) (p2: Parser<'token, 'a>) =
-    p1 |> (pBindFail
-        (fun e1 ->
-            p2 |> (pBindFail
-                (fun e2 -> pReturnFail <| e1 @ e2))))
+  p1 |> (pBindFail
+    (fun e1 ->
+      p2 |> (pBindFail
+        (fun e2 -> pReturnFail <| e1 @ e2))))
 
 let andThen (p1: Parser<'token, 'a list>) (p2: Parser<'token, 'a>) =
-    parser {
-        let! r1 = p1
-        let! r2 = p2
-        return r1 @ [r2]
-    }
+  parser {
+    let! r1 = p1
+    let! r2 = p2
+    return r1 @ [r2]
+  }
 
 let choose (parsers: Parser<'token, 'a> list): Parser<'token, 'a> =
-    parsers
-    |> List.fold orElse (pReturnFail [])
+  parsers
+  |> List.fold orElse (pReturnFail [])
 
 let chain (parsers: Parser<'token, 'a> list): Parser<'token, 'a list> =
-    parsers
-    |> List.fold andThen (pReturn [])
+  parsers
+  |> List.fold andThen (pReturn [])
 
-let rec many p =
-    p |> repeat
-    |> pBindFail (fun _msgs -> pReturn [])
+let rec any p =
+  p 
+  |> at_least_one
+  |> pBindFail (fun _msgs -> pReturn [])
 
-and repeat (p: Parser<'token, 'a>): Parser<'token, 'a list> =
-    parser {
-        let! parsed = p
-        let! restParsed = p |> many
-        return parsed :: restParsed
-    }
+and at_least_one (p: Parser<'token, 'a>): Parser<'token, 'a list> =
+  parser {
+    let! parsed = p
+    let! restParsed = p |> any
+    return parsed :: restParsed
+  }
 
-let option (p: Parser<'token, 'a>): Parser<'token, 'a list> =
-    parser {
-        let! parsed = p
-        return [parsed]
-    }
-    |> pBindFail (fun _msgs -> pReturn [])
+let optionally (p: Parser<'token, 'a>): Parser<'token, 'a option> =
+  parser {
+    let! parsed = p
+    return Some parsed
+  }
+  |> pBindFail (fun _msgs -> pReturn None)
 
 
 let parses (s: string): Parser<char,string> =
-    chain (s |> Seq.toList |> List.map accept)
-    |> pMap (fun s -> String.Join("", s))
+  parser {
+    let! chars =
+      chain (s |> Seq.toList |> List.map accept)
+    return String.Join("", chars)
+  }

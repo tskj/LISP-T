@@ -10,7 +10,8 @@
         <Compile Include="combinators.fs"/>
         <Compile Include="utils.fs"/>
         <Compile Include="pratt-parser.fs"/>
-        <Compile Include="program.fs"/>
+        <Compile Include="nok.fs"/>
+        <Compile Include="Program.fs"/>
     </ItemGroup>
 
 </Project>
