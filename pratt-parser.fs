@@ -2,7 +2,7 @@ module Pratt
 
 open System
 
-open Combinators
+open FSharpParserCombinator
 open Utils
     
 type PrefixOperator =
@@ -33,15 +33,15 @@ let run () =
     let input = "-1 + --2 * -3 * (5 + 6) - -(4 - 8) + 9 * ((12 + 13) * (140 + 150))"
     
     let parseWhitespace =
-        accept ' '
+        Parser.accept ' '
         
     let parseInt =
-        parser {
+        Parser.parse {
            let! digits =  
                 ['0'..'9']
-                |> List.map accept
-                |> choose
-                |> at_least_one
+                |> List.map Parser.accept
+                |> Combinator.choose
+                |> Combinator.atLeastOneTime
                 
            let! int =
                digits
@@ -52,28 +52,28 @@ let run () =
         }
         
     let parseBinaryOperator =
-        choose [
-            accept '*' |> pMap (fun _ -> BinaryOp (Mul, 2, Left))
-            accept '+' |> pMap (fun _ -> BinaryOp (Add, 1, Left))
-            accept '-' |> pMap (fun _ -> BinaryOp (Sub, 1, Left))
+        Combinator.choose [
+            Parser.accept '*' |> Parser.map (fun _ -> BinaryOp (Mul, 2, Left))
+            Parser.accept '+' |> Parser.map (fun _ -> BinaryOp (Add, 1, Left))
+            Parser.accept '-' |> Parser.map (fun _ -> BinaryOp (Sub, 1, Left))
         ]
 
     let parsePrefixOperator =
-        parser {
-            do! accept '-' |> drop
+        Parser.parse {
+            do! Parser.accept '-' |> Combinator.drop
             return Neg
         }
 
     let parsePostfixOperator =
-        parser {
-            do! accept '!' |> drop
+        Parser.parse {
+            do! Parser.accept '!' |> Combinator.drop
             return Fact
         }
 
-    let parseExpression: Parser<char, Expression> =
+    let parseExpression: Parser.Parser<char, Expression> =
         let rec pe precedenceLevel lhs =
-            parser {
-                do! parseWhitespace |> any |> drop
+            Parser.parse {
+                do! parseWhitespace |> Combinator.anyNumberOfTimes |> Combinator.drop
                 
                 let! (op, opPrecedenceLevel, associativity) = parseBinaryOperator
                 
@@ -83,39 +83,37 @@ let run () =
                     else
                         (<)
                 if (opPrecedenceLevel |> lessThan) precedenceLevel then
-                    return! pReturnFail ["Operator precedence is not high enough to continue recursing"]
+                    return! Parser.unitFail ["Operator precedence is not high enough to continue recursing"]
                 else
-                    do! parseWhitespace |> any |> drop
+                    do! parseWhitespace |> Combinator.anyNumberOfTimes |> Combinator.drop
                     
                     let! rest = pi opPrecedenceLevel
                     
                     let res = Binary (op, lhs, rest)
-                    return! choose [
+                    return! Combinator.choose [
                       pe precedenceLevel res
-                      parser {
-                          return res
-                      }
+                      Parser.unit res
                     ]
             }
         and pi l =
             let rec parseAtom () =
-                choose [
+                Combinator.choose [
                     parseInt
-                    parser {
+                    Parser.parse {
                         let! op = parsePrefixOperator
                         let! rest = parseAtom ()
                         return Op (op, rest)
                     }
-                    parser {
-                        do! accept '(' |> drop
+                    Parser.parse {
+                        do! Parser.accept '(' |> Combinator.drop
                         let! atom = pi -1
-                        do! accept ')' |> drop
+                        do! Parser.accept ')' |> Combinator.drop
                         return atom
                     }
                 ]
-            choose [
-                parser {
-                    do! parseWhitespace |> any |> drop
+            Combinator.choose [
+                Parser.parse {
+                    do! parseWhitespace |> Combinator.anyNumberOfTimes |> Combinator.drop
                     let! a = parseAtom ()
                     return! pe l a
                 }

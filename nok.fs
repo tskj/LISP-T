@@ -2,7 +2,7 @@ module Nok
 
 open System
 
-open Combinators
+open FSharpParserCombinator
 open Utils
 
 let acceptable = [
@@ -60,43 +60,43 @@ let unacceptable = [
   "100.000.00"        // same
 ]
 
-let kr: Parser<char, unit> = 
-  parser {
-    do! choose [
-          parses "Kr"
-          parses "kr"
-          parses "KR"
+let kr: Parser.Parser<char, unit> = 
+  Parser.parse {
+    do! Combinator.choose [
+          Parser.string "Kr"
+          Parser.string "kr"
+          Parser.string "KR"
         ]
-        |> drop
+        |> Combinator.drop
 
-    do! accept '.' |> optionally |> drop
+    do! Parser.accept '.' |> Combinator.optionally |> Combinator.drop
 
-    do! accept ' ' |> drop
+    do! Parser.accept ' ' |> Combinator.drop
 
     return ()
   }
 
-let integer_with_thousands: Parser<char, int> =
+let integer_with_thousands: Parser.Parser<char, int> =
   ['0'..'9']
-  |> List.map accept
-  |> choose
-  |> at_least_one
-  |> pMap chars_to_string
-  |> pBind string_to_int
+  |> List.map Parser.accept
+  |> Combinator.choose
+  |> Combinator.atLeastOneTime
+  |> Parser.map chars_to_string
+  |> Parser.bind string_to_int
 
-let decimal_separator_with_cents: Parser<char, int> =
-  parser {
-    do! accept ',' |> drop
+let decimal_separator_with_cents: Parser.Parser<char, int> =
+  Parser.parse {
+    do! Parser.accept ',' |> Combinator.drop
 
     let! digits =
-      choose [
+      Combinator.choose [
         ['0'..'9']
-        |> List.map accept
-        |> choose
-        |> exactly 2
-        |> pMap chars_to_string
+        |> List.map Parser.accept
+        |> Combinator.choose
+        |> Combinator.exactly 2
+        |> Parser.map chars_to_string
 
-        parses "-"
+        Parser.string "-"
       ]
 
     if digits = "-" then
@@ -109,32 +109,32 @@ let decimal_separator_with_cents: Parser<char, int> =
     return integer
   }
 
-let nok: Parser<char, unit> =
-  parser {
-    do! accept ' ' |> drop
+let nok: Parser.Parser<char, unit> =
+  Parser.parse {
+    do! Parser.accept ' ' |> Combinator.drop
 
-    do! choose [
-          parses "NOK"
-          parses "Nok"
+    do! Combinator.choose [
+          Parser.string "NOK"
+          Parser.string "Nok"
         ]
-        |> drop
+        |> Combinator.drop
 
     return ()
   }
 
-let parseNokInCents: Parser<char, int> =
-  parser {
-    do! kr |> optionally |> drop
+let parseNokInCents: Parser.Parser<char, int> =
+  Parser.parse {
+    do! kr |> Combinator.optionally |> Combinator.drop
 
     let! integer_part = 
       integer_with_thousands
 
     let! cent_part = 
       decimal_separator_with_cents 
-      |> optionally
-      |> pMap (Option.defaultValue 0)
+      |> Combinator.optionally
+      |> Parser.map (Option.defaultValue 0)
 
-    do! nok |> optionally |> drop
+    do! nok |> Combinator.optionally |> Combinator.drop
 
     return integer_part * 100 + cent_part
   }
