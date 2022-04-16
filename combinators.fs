@@ -117,6 +117,16 @@ let optionally (p: Parser<'token, 'a>): Parser<'token, 'a option> =
   }
   |> pBindFail (fun _msgs -> pReturn None)
 
+let rec exactly times (p: Parser<'token, 'a>): Parser<'token, 'a list> =
+  parser {
+    if times <= 0 then
+      return []
+    else
+      let! parsed = p
+      let! restParsed = p |> exactly (times - 1)
+      return parsed :: restParsed
+  }
+
 
 let parses (s: string): Parser<char,string> =
   parser {

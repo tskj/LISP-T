@@ -77,24 +77,36 @@ let kr: Parser<char, unit> =
   }
 
 let integer_with_thousands: Parser<char, int> =
-  parser {
-    let! digits =
-      ['0'..'9']
-      |> List.map accept
-      |> choose
-      |> at_least_one
-
-    let! integer =
-      String.Join("", digits)
-      |> string_to_int
-
-    return integer
-  }
+  ['0'..'9']
+  |> List.map accept
+  |> choose
+  |> at_least_one
+  |> pMap chars_to_string
+  |> pBind string_to_int
 
 let decimal_separator_with_cents: Parser<char, int> =
   parser {
     do! accept ',' |> drop
-    return 0
+
+    let! digits =
+      choose [
+        ['0'..'9']
+        |> List.map accept
+        |> choose
+        |> exactly 2
+        |> pMap chars_to_string
+
+        parses "-"
+      ]
+
+    if digits = "-" then
+      return 0
+    else 
+
+    let! integer =
+      string_to_int digits
+
+    return integer
   }
 
 let nok: Parser<char, unit> =
@@ -119,6 +131,8 @@ let parseNokInCents: Parser<char, int> =
 
     let! cent_part = 
       decimal_separator_with_cents 
+      |> optionally
+      |> pMap (Option.defaultValue 0)
 
     do! nok |> optionally |> drop
 
@@ -126,6 +140,6 @@ let parseNokInCents: Parser<char, int> =
   }
 
 let run () =
-  let bla = parseNokInCents "Kr. 1000 NOK"
+  let bla = parseNokInCents "Kr. 1234 NOK"
   printfn "%A" bla
   ()
