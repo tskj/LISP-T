@@ -110,15 +110,15 @@ module Combinator =
     parsers
     |> List.fold andThen (Parser.unit [])
 
-  let rec anyNumberOfTimes p =
+  let rec anyNumber p =
     p 
-    |> atLeastOneTime
+    |> atLeastOnce
     |> Parser.bindFail (fun _msgs -> Parser.unit [])
 
-  and atLeastOneTime (p: Parser.Parser<'token, 'a>): Parser.Parser<'token, 'a list> =
+  and atLeastOnce (p: Parser.Parser<'token, 'a>): Parser.Parser<'token, 'a list> =
     Parser.parse {
       let! parsed = p
-      let! restParsed = p |> anyNumberOfTimes
+      let! restParsed = p |> anyNumber
       return parsed :: restParsed
     }
 

@@ -41,7 +41,7 @@ let run () =
                 ['0'..'9']
                 |> List.map Parser.accept
                 |> Combinator.choose
-                |> Combinator.atLeastOneTime
+                |> Combinator.atLeastOnce
                 
            let! int =
                digits
@@ -73,7 +73,7 @@ let run () =
     let parseExpression: Parser.Parser<char, Expression> =
         let rec pe precedenceLevel lhs =
             Parser.parse {
-                do! parseWhitespace |> Combinator.anyNumberOfTimes |> Combinator.drop
+                do! parseWhitespace |> Combinator.anyNumber |> Combinator.drop
                 
                 let! (op, opPrecedenceLevel, associativity) = parseBinaryOperator
                 
@@ -85,7 +85,7 @@ let run () =
                 if (opPrecedenceLevel |> lessThan) precedenceLevel then
                     return! Parser.unitFail ["Operator precedence is not high enough to continue recursing"]
                 else
-                    do! parseWhitespace |> Combinator.anyNumberOfTimes |> Combinator.drop
+                    do! parseWhitespace |> Combinator.anyNumber |> Combinator.drop
                     
                     let! rest = pi opPrecedenceLevel
                     
@@ -113,7 +113,7 @@ let run () =
                 ]
             Combinator.choose [
                 Parser.parse {
-                    do! parseWhitespace |> Combinator.anyNumberOfTimes |> Combinator.drop
+                    do! parseWhitespace |> Combinator.anyNumber |> Combinator.drop
                     let! a = parseAtom ()
                     return! pe l a
                 }

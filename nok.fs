@@ -80,7 +80,7 @@ let integer_with_thousands: Parser.Parser<char, int> =
   ['0'..'9']
   |> List.map Parser.accept
   |> Combinator.choose
-  |> Combinator.atLeastOneTime
+  |> Combinator.atLeastOnce
   |> Parser.map chars_to_string
   |> Parser.bind string_to_int
 
