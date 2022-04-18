@@ -41,11 +41,11 @@ let run () =
                 ['0'..'9']
                 |> List.map Parser.accept
                 |> Combinator.choose
-                |> Combinator.atLeastOnce
+                |> Combinator.atLeastOne
                 
            let! int =
                digits
-               |> fun s -> String.Join("", s)
+               |> chars_to_string
                |> string_to_int
                
            return Int int

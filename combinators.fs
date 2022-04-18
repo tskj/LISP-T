@@ -112,10 +112,10 @@ module Combinator =
 
   let rec anyNumber p =
     p 
-    |> atLeastOnce
+    |> atLeastOne
     |> Parser.bindFail (fun _msgs -> Parser.unit [])
 
-  and atLeastOnce (p: Parser.Parser<'token, 'a>): Parser.Parser<'token, 'a list> =
+  and atLeastOne (p: Parser.Parser<'token, 'a>): Parser.Parser<'token, 'a list> =
     Parser.parse {
       let! parsed = p
       let! restParsed = p |> anyNumber
